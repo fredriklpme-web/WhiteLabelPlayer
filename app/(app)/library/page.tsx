@@ -17,7 +17,7 @@ function formatTime(s: number | null) {
   return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`
 }
 
-export default function LibraryPage() {
+function LibraryPageInner() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [albums, setAlbums] = useState<Album[]>([])
   const [recentTracks, setRecentTracks] = useState<Track[]>([])
@@ -156,5 +156,15 @@ export default function LibraryPage() {
       />}
       {menuTrack && <TrackMenu track={menuTrack} playlists={playlists} position={menuPos} onClose={() => setMenuTrack(null)} onRefresh={loadData} />}
     </div>
+  )
+}
+
+
+import { Suspense } from 'react'
+export default function LibraryPage() {
+  return (
+    <Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa' }}>Loading...</div>}>
+      <LibraryPageInner />
+    </Suspense>
   )
 }
