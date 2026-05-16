@@ -1,11 +1,10 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  // Om env-variabler saknas, skippa middleware
   if (!supabaseUrl || !supabaseKey) {
     return NextResponse.next({ request })
   }
@@ -45,7 +44,6 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/library', request.url))
     }
   } catch (e) {
-    // Vid fel, låt requesten gå igenom
     return NextResponse.next({ request })
   }
 
