@@ -2,21 +2,29 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // Bara skydda app-routes
+  const isAppRoute = pathname.startsWith('/library') ||
+    pathname.startsWith('/tracks') ||
+    pathname.startsWith('/playlists') ||
+    pathname.startsWith('/albums') ||
+    pathname.startsWith('/settings') ||
+    pathname.startsWith('/upload')
+
+  const isAuthRoute = pathname.startsWith('/login')
+
+  // Låt landningssida och allt annat gå igenom direkt
+  if (!isAppRoute && !isAuthRoute) {
+    return NextResponse.next({ request })
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseKey) {
     return NextResponse.next({ request })
   }
-
-  const isAppRoute = request.nextUrl.pathname.startsWith('/library') ||
-    request.nextUrl.pathname.startsWith('/tracks') ||
-    request.nextUrl.pathname.startsWith('/playlists') ||
-    request.nextUrl.pathname.startsWith('/albums') ||
-    request.nextUrl.pathname.startsWith('/settings') ||
-    request.nextUrl.pathname.startsWith('/upload')
-
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login')
 
   let supabaseResponse = NextResponse.next({ request })
 
@@ -51,5 +59,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api|.*\\..*).*)'],
+  matcher: ['/library/:path*', '/tracks/:path*', '/playlists/:path*', '/albums/:path*', '/settings/:path*', '/upload/:path*', '/login/:path*', '/login'],
 }
