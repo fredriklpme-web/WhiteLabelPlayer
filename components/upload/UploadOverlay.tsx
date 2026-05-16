@@ -91,7 +91,7 @@ export default function UploadOverlay({ onClose, onSuccess }: UploadOverlayProps
 
       for (let i = 0; i < albumFiles.length; i++) {
         const file = albumFiles[i]
-        const audioPath = `${user.id}/${album.id}/${i}_${file.name}`
+        const safeFileName = file.name.normalize("NFD").replace(/[0300-036f]/g, "").replace(/[åä]/g, "a").replace(/[ö]/g, "o").replace(/[ÅÄ]/g, "A").replace(/[Ö]/g, "O").replace(/[^a-zA-Z0-9._-]/g, "_"); const audioPath = `${user.id}/${album.id}/${i}_${safeFileName}`
         const { error: ue } = await supabase.storage.from('audio').upload(audioPath, file, { upsert: true })
         if (ue) continue
         const { data: sd } = await supabase.storage.from('audio').createSignedUrl(audioPath, 3600 * 24 * 365)
