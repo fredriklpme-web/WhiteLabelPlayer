@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Play, MoreHorizontal, List, Pencil, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Play, MoreHorizontal, List, Pencil, Trash2, X, Share2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Track } from '@/types'
 import { usePlayer } from '@/lib/player-context'
@@ -23,8 +23,8 @@ export default function PlaylistPage() {
   const [menuTrack, setMenuTrack] = useState<Track | null>(null)
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
   const [editingTitle, setEditingTitle] = useState(false)
-  const [showShare, setShowShare] = useState(false)
   const [newTitle, setNewTitle] = useState('')
+  const [showShare, setShowShare] = useState(false)
   const { play, currentTrack, isPlaying } = usePlayer()
   const supabase = createClient()
 
@@ -52,7 +52,7 @@ export default function PlaylistPage() {
   }
 
   const handleDelete = async () => {
-    if (!confirm(`Delete playlistn "${playlist?.title}"?`)) return
+    if (!confirm(`Delete playlist "${playlist?.title}"?`)) return
     await supabase.from('playlists').delete().eq('id', id)
     router.push('/playlists')
   }
@@ -68,7 +68,7 @@ export default function PlaylistPage() {
     setMenuTrack(track)
   }
 
-  if (loading) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa', fontSize: 13, position: 'relative', zIndex: 1 }}>Laddar...</div>
+  if (loading) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa', fontSize: 13, position: 'relative', zIndex: 1 }}>Loading...</div>
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
@@ -78,7 +78,6 @@ export default function PlaylistPage() {
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 24, position: 'relative', zIndex: 1 }}>
-        {/* Header */}
         <div style={{ display: 'flex', gap: 20, marginBottom: 28, alignItems: 'flex-end' }}>
           <div style={{ width: 100, height: 100, borderRadius: 8, background: '#f0efe9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '0.5px solid #eee' }}>
             <List size={28} style={{ color: 'var(--accent)' }} />
@@ -102,14 +101,14 @@ export default function PlaylistPage() {
               </div>
             )}
             <div style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>{tracks.length} tracks</div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {tracks.length > 0 && (
                 <button onClick={() => play(tracks[0], tracks)} style={{ background: '#111', border: 'none', color: '#fff', fontSize: 12, padding: '8px 16px', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Play size={13} /> Play all
                 </button>
               )}
               <button onClick={() => setShowShare(true)} style={{ background: 'none', border: '0.5px solid #ddd', color: '#666', fontSize: 12, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                Share
+                <Share2 size={13} /> Share
               </button>
               <button onClick={handleDelete} style={{ background: 'none', border: '0.5px solid #fca5a5', color: '#dc2626', fontSize: 12, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Trash2 size={13} /> Delete playlist
@@ -118,7 +117,6 @@ export default function PlaylistPage() {
           </div>
         </div>
 
-        {/* Låtlista */}
         {tracks.length === 0 ? (
           <div style={{ background: 'rgba(255,255,255,0.88)', border: '0.5px solid rgba(0,0,0,0.08)', borderRadius: 8, padding: 32, textAlign: 'center' }}>
             <p style={{ fontSize: 13, color: '#aaa' }}>No tracks in this playlist yet</p>
@@ -137,10 +135,10 @@ export default function PlaylistPage() {
                 <button onClick={() => play(track, tracks)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#bbb', padding: 0 }}><Play size={13} /></button>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, color: '#222', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{track.title}</div>
-                  <div style={{ fontSize: 11, color: '#bbb', marginTop: 1 }}>{(track as any).album?.title ?? 'Enskild låt'}</div>
+                  <div style={{ fontSize: 11, color: '#bbb', marginTop: 1 }}>{(track as any).album?.title ?? 'Single'}</div>
                 </div>
                 <span style={{ fontSize: 11, color: '#bbb' }}>{formatTime(track.duration)}</span>
-                <button onClick={() => removeFromPlaylist(track.id)} title="Ta bort" style={{ background: 'none', border: '0.5px solid #eee', color: '#ccc', padding: '4px 7px', borderRadius: 4, cursor: 'pointer' }}>
+                <button onClick={() => removeFromPlaylist(track.id)} title="Remove" style={{ background: 'none', border: '0.5px solid #eee', color: '#ccc', padding: '4px 7px', borderRadius: 4, cursor: 'pointer' }}>
                   <X size={11} />
                 </button>
                 <button onClick={e => openMenu(e, track)} style={{ background: 'none', border: '0.5px solid #eee', color: '#aaa', padding: '4px 8px', borderRadius: 4, cursor: 'pointer' }}>
@@ -151,8 +149,13 @@ export default function PlaylistPage() {
           </div>
         )}
       </div>
-      {showShare {menuTrack && <TrackMenu{menuTrack && <TrackMenu playlist {menuTrack && <TrackMenu{menuTrack && <TrackMenu <ShareModal type="playlist" resourceId={playlist.id} title={playlist.title} onClose={() => setShowShare(false)} />}
-      {menuTrack && <TrackMenu track={menuTrack} playlists={allPlaylists} position={menuPos} onClose={() => setMenuTrack(null)} onRefresh={load} />}
+
+      {showShare && playlist && (
+        <ShareModal type="playlist" resourceId={playlist.id} title={playlist.title} onClose={() => setShowShare(false)} />
+      )}
+      {menuTrack && (
+        <TrackMenu track={menuTrack} playlists={allPlaylists} position={menuPos} onClose={() => setMenuTrack(null)} onRefresh={load} />
+      )}
     </div>
   )
 }
