@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Track, Album } from '@/types'
 import { usePlayer } from '@/lib/player-context'
 import TrackMenu from '@/components/ui/TrackMenu'
+import ShareModal from '@/components/ui/ShareModal'
 
 function formatTime(s: number | null) {
   if (!s) return ''
@@ -20,6 +21,7 @@ export default function AlbumPage() {
   const [playlists, setPlaylists] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [menuTrack, setMenuTrack] = useState<Track | null>(null)
+  const [showShare, setShowShare] = useState(false)
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
   const [editingTitle, setEditingTitle] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -105,6 +107,9 @@ export default function AlbumPage() {
               <button onClick={() => tracks.length && play(tracks[0], tracks)} style={{ background: '#111', border: 'none', color: '#fff', fontSize: 12, padding: '8px 16px', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Play size={13} /> Play all
               </button>
+              <button onClick={() => setShowShare(true)} style={{ background: 'none', border: '0.5px solid #ddd', color: '#666', fontSize: 12, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              Share
+            </button>
               <button onClick={handleDeleteAlbum} style={{ background: 'none', border: '0.5px solid #fca5a5', color: '#dc2626', fontSize: 12, padding: '8px 14px', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Trash2 size={13} /> Delete album
               </button>
@@ -137,6 +142,7 @@ export default function AlbumPage() {
           ))}
         </div>
       </div>
+      {showShare {menuTrack && <TrackMenu{menuTrack && <TrackMenu album {menuTrack && <TrackMenu{menuTrack && <TrackMenu <ShareModal type="album" resourceId={album.id} title={album.title} onClose={() => setShowShare(false)} />}
       {menuTrack && <TrackMenu track={menuTrack} playlists={playlists} position={menuPos} onClose={() => setMenuTrack(null)} onRefresh={load} />}
     </div>
   )
