@@ -1,5 +1,4 @@
 // Web Audio API mastering chain
-// Kopplas mellan audio-element och speakers vid uppspelning
 
 export type MasterPreset = 'off' | 'clean' | 'warm' | 'loud' | 'bright'
 
@@ -39,8 +38,6 @@ export interface MasterChain {
   context: AudioContext
   source: MediaElementAudioSourceNode
   normGain: GainNode
-  outputGain: GainNode
-  disconnect: () => void
   setPreset: (preset: MasterPreset) => void
   setNormGain: (gain: number) => void
 }
@@ -51,35 +48,28 @@ export function getMasterChain(audioElement: HTMLAudioElement): MasterChain {
   if (globalChain) return globalChain
 
   const context = new AudioContext()
-  const source = context.createMediaElementSource(audioElement)
+  if (context.state === 'suspended') context.resume()
 
-  // Normalization gain – justeras per låt
+  const source = context.createMediaElementSource(audioElement)
   const normGain = context.createGain()
   normGain.gain.value = 1.0
 
-  // EQ-noder
   const highpass = context.createBiquadFilter()
   highpass.type = 'highpass'
-
   const lowShelf = context.createBiquadFilter()
   lowShelf.type = 'lowshelf'
   lowShelf.frequency.value = 120
-
   const presence = context.createBiquadFilter()
   presence.type = 'peaking'
   presence.frequency.value = 3000
   presence.Q.value = 1
-
   const highShelf = context.createBiquadFilter()
   highShelf.type = 'highshelf'
   highShelf.frequency.value = 9000
-
   const compressor = context.createDynamicsCompressor()
   compressor.knee.value = 18
-
   const outputGain = context.createGain()
 
-  // Signal-kedja: source → normGain → EQ → compressor → outputGain → speakers
   source
     .connect(normGain)
     .connect(highpass)
@@ -114,19 +104,18 @@ export function getMasterChain(audioElement: HTMLAudioElement): MasterChain {
   }
 
   const setNormGain = (gain: number) => {
-    // Smooth ramp för att undvika klick/pop vid byte av låt
-    normGain.gain.linearRampToValueAtTime(gain, context.currentTime + 0.3)
+    normGain.gain.linearRampToValueAtTime(
+      Math.max(0.1, Math.min(4.0, gain)),
+      context.currentTime + 0.4
+    )
   }
 
   setPreset('off')
 
-  const chain: MasterChain = {
-    context, source, normGain, outputGain,
-    disconnect: () => { source.disconnect(); globalChain = null },
-    setPreset,
-    setNormGain,
-  }
+  globalChain = { context, source, normGain, setPreset, setNormGain }
+  return globalChain
+}
 
-  globalChain = chain
-  return chain
+export function resetChain() {
+  globalChain = null
 }

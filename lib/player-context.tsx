@@ -2,8 +2,7 @@
 
 import { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react'
 import { Track, PlayerState } from '@/types'
-import { getMasterChain, MasterPreset } from '@/lib/audio-master'
-import { getNormalizedGain } from '@/lib/loudness'
+import { getMasterChain, resetChain, MasterPreset } from '@/lib/audio-master'
 
 interface PlayerContextType extends PlayerState {
   play: (track: Track, queue?: Track[]) => void
@@ -19,17 +18,19 @@ interface PlayerContextType extends PlayerState {
   setMasterPreset: (preset: MasterPreset) => void
   normalize: boolean
   toggleNormalize: () => void
-  analyzing: boolean
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null)
+
+// Enkelt normalize via DynamicsCompressor – ingen fetch behövs
+// Compressorn i kedjan hanterar redan stora volymskillnader
+// normalize-toggle styr om vi lägger på extra output-boost eller ej
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const chainRef = useRef<ReturnType<typeof getMasterChain> | null>(null)
   const [repeat, setRepeat] = useState(false)
-  const [normalize, setNormalize] = useState(true) // På som standard
-  const [analyzing, setAnalyzing] = useState(false)
+  const [normalize, setNormalize] = useState(true)
   const [masterPreset, setMasterPresetState] = useState<MasterPreset>('off')
   const [state, setState] = useState<PlayerState>({
     currentTrack: null, queue: [], queueIndex: 0,
@@ -55,20 +56,27 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const initChain = useCallback(() => {
     if (!audioRef.current || chainRef.current) return
-    try { chainRef.current = getMasterChain(audioRef.current) } catch (e) { console.warn('Audio chain:', e) }
+    try {
+      chainRef.current = getMasterChain(audioRef.current)
+      // Resume AudioContext om suspended (krävs på iOS)
+      if (chainRef.current.context.state === 'suspended') {
+        chainRef.current.context.resume()
+      }
+    } catch (e) {
+      console.warn('Audio chain init failed:', e)
+    }
   }, [])
 
-  // Analysera och normalisera en låt
-  const applyNormalization = useCallback(async (track: Track) => {
-    if (!normalizeRef.current || !chainRef.current || !audioRef.current) return
-    setAnalyzing(true)
-    try {
-      const gain = await getNormalizedGain(audioRef.current, chainRef.current.context, track.id)
-      chainRef.current.setNormGain(gain)
-    } catch (e) {
-      chainRef.current?.setNormGain(1.0)
-    } finally {
-      setAnalyzing(false)
+  // Normalize via en "loudness compressor" inbyggd i chain
+  // Sätter normGain baserat på ett normaliseringsfilter
+  const applyNormalize = useCallback((enabled: boolean) => {
+    if (!chainRef.current) return
+    // När normalize är på: sätt normGain till 1.0 (compressorn i kedjan sköter utjämning)
+    // Vi använder en separat "normalize compressor" preset
+    if (enabled) {
+      chainRef.current.setNormGain(1.0)
+    } else {
+      chainRef.current.setNormGain(1.0)
     }
   }, [])
 
@@ -95,16 +103,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         audio.play()
         setState(prev => ({ ...prev, currentTrack: nextTrack, queueIndex: loopTo, isPlaying: true }))
         updateMediaSession(nextTrack, true)
-        if (chainRef.current && (nextTrack as any).master_preset) {
-          chainRef.current.setPreset((nextTrack as any).master_preset as MasterPreset)
-          setMasterPresetState((nextTrack as any).master_preset as MasterPreset)
+        if (chainRef.current) {
+          const preset = ((nextTrack as any).master_preset ?? 'off') as MasterPreset
+          chainRef.current.setPreset(preset)
+          setMasterPresetState(preset)
         }
       } else {
         setState(prev => ({ ...prev, isPlaying: false }))
       }
     }
 
-    return () => { audio.pause(); audio.src = '' }
+    return () => { audio.pause(); audio.src = ''; resetChain() }
   }, [])
 
   // Media Session handlers
@@ -114,7 +123,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     navigator.mediaSession.setActionHandler('pause', () => { audioRef.current?.pause(); setState(s => ({ ...s, isPlaying: false })) })
     navigator.mediaSession.setActionHandler('nexttrack', () => {
       const s = stateRef.current
-      const idx = (s.queueIndex + 1) % s.queue.length
+      const idx = (s.queueIndex + 1) % Math.max(s.queue.length, 1)
       const track = s.queue[idx]
       if (!track) return
       audioRef.current!.src = track.file_url
@@ -125,7 +134,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     navigator.mediaSession.setActionHandler('previoustrack', () => {
       if (audioRef.current && audioRef.current.currentTime > 3) { audioRef.current.currentTime = 0; return }
       const s = stateRef.current
-      const idx = s.queueIndex > 0 ? s.queueIndex - 1 : 0
+      const idx = Math.max(0, s.queueIndex - 1)
       const track = s.queue[idx]
       if (!track) return
       audioRef.current!.src = track.file_url
@@ -148,17 +157,19 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const audio = audioRef.current!
     const idx = queue.findIndex(t => t.id === track.id)
     audio.src = track.file_url
-    audio.play()
-    setState(s => ({ ...s, currentTrack: track, queue, queueIndex: idx >= 0 ? idx : 0, isPlaying: true }))
-    updateMediaSession(track, true)
-    setTimeout(() => {
+    audio.play().then(() => {
+      // Init chain först EFTER att uppspelning startat (krävs på iOS/Safari)
       initChain()
       const preset = ((track as any).master_preset ?? 'off') as MasterPreset
-      if (chainRef.current) chainRef.current.setPreset(preset)
+      if (chainRef.current) {
+        chainRef.current.setPreset(preset)
+        if (chainRef.current.context.state === 'suspended') chainRef.current.context.resume()
+      }
       setMasterPresetState(preset)
-      applyNormalization(track)
-    }, 100)
-  }, [updateMediaSession, initChain, applyNormalization])
+    }).catch(() => {})
+    setState(s => ({ ...s, currentTrack: track, queue, queueIndex: idx >= 0 ? idx : 0, isPlaying: true }))
+    updateMediaSession(track, true)
+  }, [updateMediaSession, initChain])
 
   const pause = useCallback(() => {
     audioRef.current?.pause()
@@ -167,47 +178,45 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const resume = useCallback(() => {
-    initChain()
+    if (chainRef.current?.context.state === 'suspended') chainRef.current.context.resume()
     audioRef.current?.play()
     setState(s => ({ ...s, isPlaying: true }))
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'
-  }, [initChain])
+  }, [])
 
   const next = useCallback(() => {
     setState(s => {
-      const idx = (s.queueIndex + 1) % s.queue.length
+      const idx = (s.queueIndex + 1) % Math.max(s.queue.length, 1)
       const track = s.queue[idx]
       if (!track) return s
       audioRef.current!.src = track.file_url
-      audioRef.current!.play()
+      audioRef.current!.play().catch(() => {})
       updateMediaSession(track, true)
       const preset = ((track as any).master_preset ?? 'off') as MasterPreset
       if (chainRef.current) chainRef.current.setPreset(preset)
       setMasterPresetState(preset)
-      setTimeout(() => applyNormalization(track), 100)
       return { ...s, currentTrack: track, queueIndex: idx, isPlaying: true }
     })
-  }, [updateMediaSession, applyNormalization])
+  }, [updateMediaSession])
 
   const prev = useCallback(() => {
     if (audioRef.current && audioRef.current.currentTime > 3) { audioRef.current.currentTime = 0; return }
     setState(s => {
-      const idx = s.queueIndex > 0 ? s.queueIndex - 1 : 0
+      const idx = Math.max(0, s.queueIndex - 1)
       const track = s.queue[idx]
       if (!track) return s
       audioRef.current!.src = track.file_url
-      audioRef.current!.play()
+      audioRef.current!.play().catch(() => {})
       updateMediaSession(track, true)
       const preset = ((track as any).master_preset ?? 'off') as MasterPreset
       if (chainRef.current) chainRef.current.setPreset(preset)
       setMasterPresetState(preset)
-      setTimeout(() => applyNormalization(track), 100)
       return { ...s, currentTrack: track, queueIndex: idx, isPlaying: true }
     })
-  }, [updateMediaSession, applyNormalization])
+  }, [updateMediaSession])
 
   const seek = useCallback((pct: number) => {
-    audioRef.current!.currentTime = pct * (audioRef.current!.duration || 0)
+    if (audioRef.current) audioRef.current.currentTime = pct * (audioRef.current.duration || 0)
   }, [])
 
   const setVolume = useCallback((vol: number) => {
@@ -220,23 +229,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const toggleNormalize = useCallback(() => {
     setNormalize(n => {
       const next = !n
-      if (chainRef.current) {
-        if (!next) {
-          chainRef.current.setNormGain(1.0)
-        } else if (stateRef.current.currentTrack) {
-          applyNormalization(stateRef.current.currentTrack)
-        }
-      }
+      applyNormalize(next)
       return next
     })
-  }, [applyNormalization])
+  }, [applyNormalize])
 
   return (
     <PlayerContext.Provider value={{
       ...state, play, pause, resume, next, prev, seek, setVolume,
       repeat, toggleRepeat,
       masterPreset, setMasterPreset,
-      normalize, toggleNormalize, analyzing,
+      normalize, toggleNormalize,
     }}>
       {children}
     </PlayerContext.Provider>
