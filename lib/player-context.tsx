@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react'
 import { Track, PlayerState } from '@/types'
+import { getMasterChain, MasterPreset } from '@/lib/audio-master'
 
 interface PlayerContextType extends PlayerState {
   play: (track: Track, queue?: Track[]) => void
@@ -13,24 +14,22 @@ interface PlayerContextType extends PlayerState {
   setVolume: (vol: number) => void
   repeat: boolean
   toggleRepeat: () => void
+  masterPreset: MasterPreset
+  setMasterPreset: (preset: MasterPreset) => void
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null)
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const chainRef = useRef<ReturnType<typeof getMasterChain> | null>(null)
   const [repeat, setRepeat] = useState(false)
+  const [masterPreset, setMasterPresetState] = useState<MasterPreset>('off')
   const [state, setState] = useState<PlayerState>({
-    currentTrack: null,
-    queue: [],
-    queueIndex: 0,
-    isPlaying: false,
-    progress: 0,
-    duration: 0,
-    volume: 0.8,
+    currentTrack: null, queue: [], queueIndex: 0,
+    isPlaying: false, progress: 0, duration: 0, volume: 0.8,
   })
 
-  // Refs för att hålla färska värden inuti callbacks
   const stateRef = useRef(state)
   stateRef.current = state
   const repeatRef = useRef(repeat)
@@ -54,98 +53,79 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     audio.ontimeupdate = () => {
       setState(s => ({ ...s, progress: audio.currentTime, duration: audio.duration || 0 }))
       if ('mediaSession' in navigator && audio.duration) {
-        try {
-          navigator.mediaSession.setPositionState({
-            duration: audio.duration,
-            playbackRate: audio.playbackRate,
-            position: audio.currentTime,
-          })
-        } catch {}
+        try { navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: 1, position: audio.currentTime }) } catch {}
       }
     }
 
     audio.onended = () => {
       const s = stateRef.current
-      const r = repeatRef.current
-      if (r) {
-        // Upprepa samma låt
-        audio.currentTime = 0
-        audio.play()
-        return
-      }
-      const next = s.queueIndex + 1
-      if (next < s.queue.length) {
-        const nextTrack = s.queue[next]
+      if (repeatRef.current) { audio.currentTime = 0; audio.play(); return }
+      const nextIdx = s.queueIndex + 1
+      const loopTo = nextIdx < s.queue.length ? nextIdx : 0
+      const nextTrack = s.queue[loopTo]
+      if (nextTrack) {
         audio.src = nextTrack.file_url
         audio.play()
-        setState(prev => ({ ...prev, currentTrack: nextTrack, queueIndex: next, isPlaying: true }))
+        setState(prev => ({ ...prev, currentTrack: nextTrack, queueIndex: loopTo, isPlaying: true }))
         updateMediaSession(nextTrack, true)
-      } else {
-        // Börja om från början om continuous play
-        if (s.queue.length > 1) {
-          const firstTrack = s.queue[0]
-          audio.src = firstTrack.file_url
-          audio.play()
-          setState(prev => ({ ...prev, currentTrack: firstTrack, queueIndex: 0, isPlaying: true }))
-          updateMediaSession(firstTrack, true)
-        } else {
-          setState(prev => ({ ...prev, isPlaying: false }))
+        // Sätt preset för nästa låt
+        if (chainRef.current && (nextTrack as any).master_preset) {
+          chainRef.current.setPreset((nextTrack as any).master_preset as MasterPreset)
+          setMasterPresetState((nextTrack as any).master_preset as MasterPreset)
         }
+      } else {
+        setState(prev => ({ ...prev, isPlaying: false }))
       }
     }
 
     return () => { audio.pause(); audio.src = '' }
   }, [])
 
-  // Sätt upp Media Session action handlers
+  // Media Session handlers
   useEffect(() => {
     if (!('mediaSession' in navigator)) return
-
-    const handlePlay = () => { audioRef.current?.play(); setState(s => ({ ...s, isPlaying: true })) }
-    const handlePause = () => { audioRef.current?.pause(); setState(s => ({ ...s, isPlaying: false })) }
-    const handleNext = () => {
+    navigator.mediaSession.setActionHandler('play', () => { audioRef.current?.play(); setState(s => ({ ...s, isPlaying: true })) })
+    navigator.mediaSession.setActionHandler('pause', () => { audioRef.current?.pause(); setState(s => ({ ...s, isPlaying: false })) })
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
       const s = stateRef.current
-      const idx = s.queueIndex + 1
-      if (idx >= s.queue.length) return
+      const idx = (s.queueIndex + 1) % s.queue.length
       const track = s.queue[idx]
+      if (!track) return
       audioRef.current!.src = track.file_url
       audioRef.current!.play()
       setState(prev => ({ ...prev, currentTrack: track, queueIndex: idx, isPlaying: true }))
       updateMediaSession(track, true)
-    }
-    const handlePrev = () => {
+    })
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      if (audioRef.current && audioRef.current.currentTime > 3) { audioRef.current.currentTime = 0; return }
       const s = stateRef.current
-      // Om > 3 sekunder in – starta om låten
-      if (audioRef.current && audioRef.current.currentTime > 3) {
-        audioRef.current.currentTime = 0
-        return
-      }
-      const idx = s.queueIndex - 1
-      if (idx < 0) return
+      const idx = s.queueIndex > 0 ? s.queueIndex - 1 : 0
       const track = s.queue[idx]
+      if (!track) return
       audioRef.current!.src = track.file_url
       audioRef.current!.play()
       setState(prev => ({ ...prev, currentTrack: track, queueIndex: idx, isPlaying: true }))
       updateMediaSession(track, true)
-    }
-    const handleSeek = (details: MediaSessionActionDetails) => {
-      if (audioRef.current && details.seekTime !== undefined) {
-        audioRef.current.currentTime = details.seekTime
-      }
-    }
+    })
+    navigator.mediaSession.setActionHandler('seekto', (d) => {
+      if (audioRef.current && d.seekTime !== undefined) audioRef.current.currentTime = d.seekTime
+    })
+  }, [])
 
-    navigator.mediaSession.setActionHandler('play', handlePlay)
-    navigator.mediaSession.setActionHandler('pause', handlePause)
-    navigator.mediaSession.setActionHandler('nexttrack', handleNext)
-    navigator.mediaSession.setActionHandler('previoustrack', handlePrev)
-    navigator.mediaSession.setActionHandler('seekto', handleSeek)
-
-    return () => {
-      ['play', 'pause', 'nexttrack', 'previoustrack', 'seekto'].forEach(action => {
-        try { navigator.mediaSession.setActionHandler(action as MediaSessionAction, null) } catch {}
-      })
+  const initChain = useCallback(() => {
+    if (!audioRef.current || chainRef.current) return
+    try {
+      chainRef.current = getMasterChain(audioRef.current)
+    } catch (e) {
+      console.warn('Audio chain init failed:', e)
     }
   }, [])
+
+  const setMasterPreset = useCallback((preset: MasterPreset) => {
+    initChain()
+    if (chainRef.current) chainRef.current.setPreset(preset)
+    setMasterPresetState(preset)
+  }, [initChain])
 
   const play = useCallback((track: Track, queue: Track[] = [track]) => {
     const audio = audioRef.current!
@@ -154,7 +134,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     audio.play()
     setState(s => ({ ...s, currentTrack: track, queue, queueIndex: idx >= 0 ? idx : 0, isPlaying: true }))
     updateMediaSession(track, true)
-  }, [updateMediaSession])
+    // Init chain och sätt preset för denna låt
+    setTimeout(() => {
+      initChain()
+      const preset = ((track as any).master_preset ?? 'off') as MasterPreset
+      if (chainRef.current) chainRef.current.setPreset(preset)
+      setMasterPresetState(preset)
+    }, 100)
+  }, [updateMediaSession, initChain])
 
   const pause = useCallback(() => {
     audioRef.current?.pause()
@@ -163,35 +150,39 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const resume = useCallback(() => {
+    initChain()
     audioRef.current?.play()
     setState(s => ({ ...s, isPlaying: true }))
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'
-  }, [])
+  }, [initChain])
 
   const next = useCallback(() => {
     setState(s => {
-      const idx = s.queueIndex + 1
-      if (idx >= s.queue.length) return s
+      const idx = (s.queueIndex + 1) % s.queue.length
       const track = s.queue[idx]
+      if (!track) return s
       audioRef.current!.src = track.file_url
       audioRef.current!.play()
       updateMediaSession(track, true)
+      const preset = ((track as any).master_preset ?? 'off') as MasterPreset
+      if (chainRef.current) chainRef.current.setPreset(preset)
+      setMasterPresetState(preset)
       return { ...s, currentTrack: track, queueIndex: idx, isPlaying: true }
     })
   }, [updateMediaSession])
 
   const prev = useCallback(() => {
-    if (audioRef.current && audioRef.current.currentTime > 3) {
-      audioRef.current.currentTime = 0
-      return
-    }
+    if (audioRef.current && audioRef.current.currentTime > 3) { audioRef.current.currentTime = 0; return }
     setState(s => {
-      const idx = s.queueIndex - 1
-      if (idx < 0) return s
+      const idx = s.queueIndex > 0 ? s.queueIndex - 1 : 0
       const track = s.queue[idx]
+      if (!track) return s
       audioRef.current!.src = track.file_url
       audioRef.current!.play()
       updateMediaSession(track, true)
+      const preset = ((track as any).master_preset ?? 'off') as MasterPreset
+      if (chainRef.current) chainRef.current.setPreset(preset)
+      setMasterPresetState(preset)
       return { ...s, currentTrack: track, queueIndex: idx, isPlaying: true }
     })
   }, [updateMediaSession])
@@ -209,7 +200,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const toggleRepeat = useCallback(() => setRepeat(r => !r), [])
 
   return (
-    <PlayerContext.Provider value={{ ...state, play, pause, resume, next, prev, seek, setVolume, repeat, toggleRepeat }}>
+    <PlayerContext.Provider value={{ ...state, play, pause, resume, next, prev, seek, setVolume, repeat, toggleRepeat, masterPreset, setMasterPreset }}>
       {children}
     </PlayerContext.Provider>
   )
