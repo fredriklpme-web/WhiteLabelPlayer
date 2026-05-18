@@ -62,7 +62,7 @@
   /* --- LAYOUT: Sidomenyn --- */
   --sidebar-width:   400px;  /* Bredd på desktop */
   --dymo-width:      44px;   /* Dymo-strip bredd */
-  --dymo-font-size:  18px;   /* Dymo-strip textstorlek */
+  --dymo-font-size:  32px;   /* Dymo-strip textstorlek */
 
   /* --- ÖVERGÅNGAR --- */
   --transition-fast: 0.15s ease;
@@ -144,7 +144,7 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 3px;
   padding: 3px 12px;
   font-family: var(--font-display);
-  font-size: 11px;
+  font-size: 32px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: #111;
