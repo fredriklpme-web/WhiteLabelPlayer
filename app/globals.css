@@ -1,50 +1,140 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   DESIGN TOKENS – justera dessa värden för att ändra utseendet
+   ============================================================ */
+
 :root {
-  --bg-main: #f8f7f3;
-  --bg-card: #ffffff;
-  --bg-sidebar: #111111;
-  --bg-player: #1a1a1a;
-  --border: rgba(0,0,0,0.08);
-  --border-mid: rgba(0,0,0,0.14);
-  --text-primary: #111111;
-  --text-secondary: #777777;
-  --text-muted: #bbbbbb;
-  --accent: #d4820a;
-  --accent-dark: #a86208;
-  --accent-bg: #fdf3e3;
-  --font-display: 'IBM Plex Mono', monospace;
-  --font-body: 'DM Sans', sans-serif;
+
+  /* --- FÄRGER: Bakgrunder --- */
+  --bg-main:         #f8f7f3;   /* Huvudbakgrund (vit/beige) */
+  --bg-card:         #ffffff;   /* Kortbakgrund */
+  --bg-sidebar:      #111111;   /* Vänstermeny */
+  --bg-player:       #1a1a1a;   /* Mini-spelare i menyn */
+  --bg-overlay:      rgba(0,0,0,0.5); /* Modal-overlay */
+
+  /* --- FÄRGER: Text --- */
+  --text-primary:    #111111;   /* Huvudtext */
+  --text-secondary:  #777777;   /* Sekundär text */
+  --text-muted:      #bbbbbb;   /* Diskret text (metadata, tid) */
+  --text-sidebar:    #f0f0f0;   /* Text i sidomenyn */
+  --text-sidebar-dim:#777777;   /* Inaktiva menyval */
+
+  /* --- FÄRGER: Accent (orange/amber) --- */
+  --accent:          #d4820a;   /* Primär accentfärg */
+  --accent-dark:     #a86208;   /* Hover-state för accent */
+  --accent-bg:       #fdf3e3;   /* Ljus bakgrund med accents */
+
+  /* --- FÄRGER: Borders --- */
+  --border:          rgba(0,0,0,0.08);  /* Diskret kantlinje */
+  --border-mid:      rgba(0,0,0,0.14); /* Tydligare kantlinje */
+  --border-sidebar:  #2a2a2a;          /* Kantlinjer i sidomenyn */
+
+  /* --- TYPOGRAFI: Fonter --- */
+  --font-body:       'DM Sans', sans-serif;      /* Brödtext, UI */
+  --font-display:    'StealThis', cursive;        /* Rubriker, labels */
+
+  /* --- TYPOGRAFI: Storlekar --- */
+  --text-xs:         11px;   /* Metadata, timestamps */
+  --text-sm:         12px;   /* Sekundär UI-text */
+  --text-base:       13px;   /* Standard UI-text */
+  --text-md:         14px;   /* Låttitlar, knappar */
+  --text-lg:         15px;   /* CTA-knappar */
+  --text-xl:         18px;   /* Sidrubriker */
+  --text-2xl:        22px;   /* Album/spellistetitlar */
+
+  /* --- TYPOGRAFI: Sidomenyn --- */
+  --sidebar-nav-size:    14px;  /* Menyval storlek */
+  --sidebar-logo-size:   16px;  /* WL Player-logotyp */
+  --sidebar-label-size:  9px;   /* MUSIK / KONTO labels */
+
+  /* --- LAYOUT: Rundningar --- */
+  --radius-sm:       4px;   /* Knappar, taggar */
+  --radius-md:       6px;   /* Inputs, small cards */
+  --radius-lg:       8px;   /* Albumkort, paneler */
+  --radius-xl:       10px;  /* Modaler */
+  --radius-2xl:      12px;  /* Stora modaler */
+
+  /* --- LAYOUT: Sidomenyn --- */
+  --sidebar-width:   400px;  /* Bredd på desktop */
+  --dymo-width:      44px;   /* Dymo-strip bredd */
+  --dymo-font-size:  18px;   /* Dymo-strip textstorlek */
+
+  /* --- ÖVERGÅNGAR --- */
+  --transition-fast: 0.15s ease;
+  --transition-mid:  0.25s ease;
+
 }
 
+/* ============================================================
+   BASREGLER – rör inte om du inte vet vad du gör
+   ============================================================ */
+
 * { box-sizing: border-box; }
-html, body { font-family: var(--font-body); background: var(--bg-main); color: var(--text-primary); margin: 0; padding: 0; height: 100%; }
+
+html, body {
+  font-family: var(--font-body);
+  background: var(--bg-main);
+  color: var(--text-primary);
+  margin: 0; padding: 0; height: 100%;
+}
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes slideInOverlay { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
-.animate-fade-in { animation: fadeIn 0.25s ease forwards; }
-.animate-overlay { animation: slideInOverlay 0.2s ease forwards; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInOverlay {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
 
-input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 3px; background: rgba(255,255,255,0.15); border-radius: 2px; outline: none; cursor: pointer; }
-input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%; background: var(--accent); cursor: pointer; }
-input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); border: none; cursor: pointer; }
+.animate-fade-in  { animation: fadeIn 0.25s ease forwards; }
+.animate-overlay  { animation: slideInOverlay 0.2s ease forwards; }
+
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 3px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px; outline: none; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--accent); cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--accent); border: none; cursor: pointer;
+}
+
+/* ============================================================
+   FONTER
+   ============================================================ */
 
 @font-face {
   font-family: 'StealThis';
   src: url('/StealThisFont.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
+  font-display: swap;
 }
 
-.font-steal { font-family: 'StealThis', cursive; }
+.font-steal { font-family: var(--font-display); }
+
+/* ============================================================
+   DYMO-STRIP KOMPONENT
+   ============================================================ */
 
 .dymo-strip {
   display: inline-flex;
@@ -53,7 +143,7 @@ input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; border-radius
   border: 1.5px solid #222;
   border-radius: 3px;
   padding: 3px 12px;
-  font-family: 'StealThis', cursive;
+  font-family: var(--font-display);
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
