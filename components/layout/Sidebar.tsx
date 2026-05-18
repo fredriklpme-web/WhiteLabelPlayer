@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { usePlayer } from '@/lib/player-context'
-import { Disc, Music, List, Upload, Settings, SkipBack, SkipForward, Play, Pause, Menu, X, Repeat } from 'lucide-react'
+import { Disc, Music, List, Upload, Settings, SkipBack, SkipForward, Play, Pause, Menu, X, Repeat, Volume2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import CdProfile from '@/components/ui/CdProfile'
 
@@ -22,7 +22,7 @@ function formatTime(s: number) {
 
 export default function Sidebar() {
   const pathname = usePathname()
-  const { currentTrack, isPlaying, progress, duration, pause, resume, next, prev, seek, repeat, toggleRepeat } = usePlayer()
+  const { currentTrack, isPlaying, progress, duration, pause, resume, next, prev, seek, repeat, toggleRepeat, normalize, toggleNormalize, analyzing } = usePlayer()
   const [profile, setProfile] = useState<{ display_name: string | null; avatar_url: string | null } | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -153,6 +153,7 @@ export default function Sidebar() {
             </button>
             <button onClick={next} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', padding: 4 }}><SkipForward size={14} /></button>
             <button onClick={toggleRepeat} title="Repeat" style={{ background: "none", border: "none", color: repeat ? "var(--accent)" : "#444", cursor: "pointer", padding: 4 }}><Repeat size={12} /></button>
+            <button onClick={toggleNormalize} title={normalize ? "Normalize: On (-14 LUFS)" : "Normalize: Off"} style={{ background: "none", border: "none", color: normalize ? "var(--accent)" : "#444", cursor: "pointer", padding: 4, display: "flex", alignItems: "center", gap: 3, fontSize: 10, fontFamily: "monospace" }}><Volume2 size={12} />{ analyzing ? "..." : normalize ? "N" : ""}</button>
             <span style={{ fontSize: 11, color: "#555", fontFamily: "StealThis, cursive" }}>{formatTime(progress)}</span>
           </div>
           <div style={{ marginTop: 8, height: 2, background: '#2e2e2e', borderRadius: 1, cursor: 'pointer' }}

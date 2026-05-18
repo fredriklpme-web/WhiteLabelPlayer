@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react'
 import { Track, PlayerState } from '@/types'
 import { getMasterChain, MasterPreset } from '@/lib/audio-master'
+import { getNormalizedGain } from '@/lib/loudness'
 
 interface PlayerContextType extends PlayerState {
   play: (track: Track, queue?: Track[]) => void
@@ -16,6 +17,9 @@ interface PlayerContextType extends PlayerState {
   toggleRepeat: () => void
   masterPreset: MasterPreset
   setMasterPreset: (preset: MasterPreset) => void
+  normalize: boolean
+  toggleNormalize: () => void
+  analyzing: boolean
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null)
@@ -24,6 +28,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const chainRef = useRef<ReturnType<typeof getMasterChain> | null>(null)
   const [repeat, setRepeat] = useState(false)
+  const [normalize, setNormalize] = useState(true) // På som standard
+  const [analyzing, setAnalyzing] = useState(false)
   const [masterPreset, setMasterPresetState] = useState<MasterPreset>('off')
   const [state, setState] = useState<PlayerState>({
     currentTrack: null, queue: [], queueIndex: 0,
@@ -34,6 +40,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   stateRef.current = state
   const repeatRef = useRef(repeat)
   repeatRef.current = repeat
+  const normalizeRef = useRef(normalize)
+  normalizeRef.current = normalize
 
   const updateMediaSession = useCallback((track: Track, playing: boolean) => {
     if (!('mediaSession' in navigator)) return
@@ -43,6 +51,25 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       album: 'White Label Player',
     })
     navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'
+  }, [])
+
+  const initChain = useCallback(() => {
+    if (!audioRef.current || chainRef.current) return
+    try { chainRef.current = getMasterChain(audioRef.current) } catch (e) { console.warn('Audio chain:', e) }
+  }, [])
+
+  // Analysera och normalisera en låt
+  const applyNormalization = useCallback(async (track: Track) => {
+    if (!normalizeRef.current || !chainRef.current || !audioRef.current) return
+    setAnalyzing(true)
+    try {
+      const gain = await getNormalizedGain(audioRef.current, chainRef.current.context, track.id)
+      chainRef.current.setNormGain(gain)
+    } catch (e) {
+      chainRef.current?.setNormGain(1.0)
+    } finally {
+      setAnalyzing(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -68,7 +95,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         audio.play()
         setState(prev => ({ ...prev, currentTrack: nextTrack, queueIndex: loopTo, isPlaying: true }))
         updateMediaSession(nextTrack, true)
-        // Sätt preset för nästa låt
         if (chainRef.current && (nextTrack as any).master_preset) {
           chainRef.current.setPreset((nextTrack as any).master_preset as MasterPreset)
           setMasterPresetState((nextTrack as any).master_preset as MasterPreset)
@@ -112,15 +138,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     })
   }, [])
 
-  const initChain = useCallback(() => {
-    if (!audioRef.current || chainRef.current) return
-    try {
-      chainRef.current = getMasterChain(audioRef.current)
-    } catch (e) {
-      console.warn('Audio chain init failed:', e)
-    }
-  }, [])
-
   const setMasterPreset = useCallback((preset: MasterPreset) => {
     initChain()
     if (chainRef.current) chainRef.current.setPreset(preset)
@@ -134,14 +151,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     audio.play()
     setState(s => ({ ...s, currentTrack: track, queue, queueIndex: idx >= 0 ? idx : 0, isPlaying: true }))
     updateMediaSession(track, true)
-    // Init chain och sätt preset för denna låt
     setTimeout(() => {
       initChain()
       const preset = ((track as any).master_preset ?? 'off') as MasterPreset
       if (chainRef.current) chainRef.current.setPreset(preset)
       setMasterPresetState(preset)
+      applyNormalization(track)
     }, 100)
-  }, [updateMediaSession, initChain])
+  }, [updateMediaSession, initChain, applyNormalization])
 
   const pause = useCallback(() => {
     audioRef.current?.pause()
@@ -167,9 +184,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       const preset = ((track as any).master_preset ?? 'off') as MasterPreset
       if (chainRef.current) chainRef.current.setPreset(preset)
       setMasterPresetState(preset)
+      setTimeout(() => applyNormalization(track), 100)
       return { ...s, currentTrack: track, queueIndex: idx, isPlaying: true }
     })
-  }, [updateMediaSession])
+  }, [updateMediaSession, applyNormalization])
 
   const prev = useCallback(() => {
     if (audioRef.current && audioRef.current.currentTime > 3) { audioRef.current.currentTime = 0; return }
@@ -183,13 +201,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       const preset = ((track as any).master_preset ?? 'off') as MasterPreset
       if (chainRef.current) chainRef.current.setPreset(preset)
       setMasterPresetState(preset)
+      setTimeout(() => applyNormalization(track), 100)
       return { ...s, currentTrack: track, queueIndex: idx, isPlaying: true }
     })
-  }, [updateMediaSession])
+  }, [updateMediaSession, applyNormalization])
 
   const seek = useCallback((pct: number) => {
-    const audio = audioRef.current!
-    audio.currentTime = pct * audio.duration
+    audioRef.current!.currentTime = pct * (audioRef.current!.duration || 0)
   }, [])
 
   const setVolume = useCallback((vol: number) => {
@@ -199,8 +217,27 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const toggleRepeat = useCallback(() => setRepeat(r => !r), [])
 
+  const toggleNormalize = useCallback(() => {
+    setNormalize(n => {
+      const next = !n
+      if (chainRef.current) {
+        if (!next) {
+          chainRef.current.setNormGain(1.0)
+        } else if (stateRef.current.currentTrack) {
+          applyNormalization(stateRef.current.currentTrack)
+        }
+      }
+      return next
+    })
+  }, [applyNormalization])
+
   return (
-    <PlayerContext.Provider value={{ ...state, play, pause, resume, next, prev, seek, setVolume, repeat, toggleRepeat, masterPreset, setMasterPreset }}>
+    <PlayerContext.Provider value={{
+      ...state, play, pause, resume, next, prev, seek, setVolume,
+      repeat, toggleRepeat,
+      masterPreset, setMasterPreset,
+      normalize, toggleNormalize, analyzing,
+    }}>
       {children}
     </PlayerContext.Provider>
   )
