@@ -1,75 +1,56 @@
-// Realtids RMS-mätning via AnalyserNode
-// Mäter de första 10 sekunderna och beräknar normaliserings-gain
+// Loudness normalization via offline AudioContext
+// Analyserar filen separat från spelaren – påverkar inte uppspelningen
+// Justerar sedan audio.volume för att nå target LUFS (~-14 dBFS RMS)
 
-const TARGET_LUFS = -14
-const loudnessCache = new Map<string, number>()
+const TARGET_DB = -14 // Spotify-standard
+const cache = new Map<string, number>() // trackId -> normaliserat volume (0-1)
 
-export async function measureAndNormalize(
-  audioElement: HTMLAudioElement,
-  context: AudioContext,
+export async function getNormalizedVolume(
+  fileUrl: string,
   trackId: string,
-  onGain: (gain: number) => void
-): Promise<void> {
-  // Använd cache om tillgänglig
-  if (loudnessCache.has(trackId)) {
-    const cachedLufs = loudnessCache.get(trackId)!
-    onGain(lufsToGain(cachedLufs))
-    return
-  }
+  baseVolume: number = 0.8
+): Promise<number> {
+  // Returnera cachat värde om tillgängligt
+  if (cache.has(trackId)) return cache.get(trackId)!
 
-  // Mät RMS via AnalyserNode under uppspelning
-  const analyser = context.createAnalyser()
-  analyser.fftSize = 2048
-
-  // Koppla analyser parallellt (utan att störa signal-kedjan)
-  // Vi kopplar från source via normGain-noden
-  const dataArray = new Float32Array(analyser.fftSize)
-  const samples: number[] = []
-  let measuring = true
-  let startTime = context.currentTime
-
-  const measure = () => {
-    if (!measuring) return
-    if (context.currentTime - startTime > 15) {
-      // Klar – beräkna RMS
-      measuring = false
-      if (samples.length > 0) {
-        const sumSq = samples.reduce((s, v) => s + v * v, 0)
-        const rms = Math.sqrt(sumSq / samples.length)
-        const dbfs = rms > 0 ? 20 * Math.log10(rms) : -60
-        const estimatedLufs = dbfs - 3
-        loudnessCache.set(trackId, estimatedLufs)
-        onGain(lufsToGain(estimatedLufs))
-      }
-      return
-    }
-    analyser.getFloatTimeDomainData(dataArray)
-    const rms = Math.sqrt(dataArray.reduce((s, v) => s + v * v, 0) / dataArray.length)
-    if (rms > 0.001) samples.push(rms) // Ignorera tystnad
-    requestAnimationFrame(measure)
-  }
-
-  // Koppla analyser till destination parallellt
   try {
-    // Hämta sista nod i chain (outputGain) och koppla analyser
-    const tempGain = context.createGain()
-    tempGain.gain.value = 0 // Tyst – bara för mätning
-    analyser.connect(tempGain)
-    tempGain.connect(context.destination)
+    // Hämta filen som ArrayBuffer
+    const res = await fetch(fileUrl)
+    if (!res.ok) return baseVolume
+    const buffer = await res.arrayBuffer()
 
-    measure()
+    // Analysera med offline context – påverkar inte spelar-audio alls
+    const offlineCtx = new OfflineAudioContext(1, 1, 44100)
+    const audioBuffer = await offlineCtx.decodeAudioData(buffer)
 
-    // Stoppa efter 15s oavsett
-    setTimeout(() => { measuring = false }, 15000)
-  } catch (e) {
-    // Om analysen misslyckas, kör utan normalisering
+    // Beräkna RMS över alla kanaler
+    let sumSq = 0
+    let total = 0
+    for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
+      const data = audioBuffer.getChannelData(c)
+      for (let i = 0; i < data.length; i++) {
+        sumSq += data[i] * data[i]
+      }
+      total += data.length
+    }
+
+    const rms = Math.sqrt(sumSq / total)
+    if (rms < 0.0001) return baseVolume // Tyst fil
+
+    const dbfs = 20 * Math.log10(rms)
+    const gainDb = TARGET_DB - dbfs
+    const gainLinear = Math.pow(10, gainDb / 20)
+
+    // Applicera på baseVolume och begränsa till 0.0 - 1.0
+    const normalizedVolume = Math.max(0.05, Math.min(1.0, baseVolume * gainLinear))
+
+    cache.set(trackId, normalizedVolume)
+    return normalizedVolume
+  } catch {
+    return baseVolume
   }
 }
 
-function lufsToGain(lufs: number): number {
-  const gainDb = TARGET_LUFS - lufs
-  const clamped = Math.max(-20, Math.min(12, gainDb))
-  return Math.pow(10, clamped / 20)
+export function clearLoudnessCache() {
+  cache.clear()
 }
-
-export { loudnessCache }
